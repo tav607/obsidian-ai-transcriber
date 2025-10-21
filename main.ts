@@ -206,6 +206,16 @@ export default class ObsidianAITranscriber extends Plugin {
 	 */
 	public async loadSettings(): Promise<void> {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		// Ensure nested defaults for newly added fields
+		if (!this.settings.transcriber) {
+			this.settings.transcriber = { ...DEFAULT_SETTINGS.transcriber };
+		}
+		if (typeof this.settings.transcriber.concurrencyLimit !== 'number' || Number.isNaN(this.settings.transcriber.concurrencyLimit)) {
+			this.settings.transcriber.concurrencyLimit = DEFAULT_SETTINGS.transcriber.concurrencyLimit;
+		}
+		if (this.settings.transcriber.concurrencyLimit < 1) {
+			this.settings.transcriber.concurrencyLimit = 1;
+		}
 	}
 
 	/**

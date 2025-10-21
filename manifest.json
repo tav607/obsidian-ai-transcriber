@@ -1,11 +1,11 @@
 {
 	"id": "obsidian-ai-transcriber",
 	"name": "Obsidian AI Transcriber",
-	"version": "1.1.5",
 	"minAppVersion": "1.6.0",
 	"description": "Transcribe audio recordings to Markdown notes",
 	"author": "Tav607",
 	"authorUrl": "https://github.com/Tav607",
 	"fundingUrl": "",
-	"isDesktopOnly": false
+	"isDesktopOnly": false,
+	"version": "1.1.6"
 }

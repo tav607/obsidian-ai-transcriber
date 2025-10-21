@@ -1,6 +1,6 @@
 import { App, PluginSettingTab, Setting, Modal, TextComponent, TextAreaComponent, Notice } from 'obsidian';
 import ObsidianAITranscriber from '../../main';
-import { SystemPromptTemplate } from './types';
+import { SystemPromptTemplate, DEFAULT_SETTINGS } from './types';
 
 export default class SettingsTab extends PluginSettingTab {
 	plugin: ObsidianAITranscriber;
@@ -111,6 +111,22 @@ export default class SettingsTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				})
 			);
+		new Setting(containerEl)
+			.setName('Max Concurrent Requests')
+			.setDesc('Maximum number of audio chunks to transcribe in parallel (minimum 1).')
+			.addText(text => {
+				text
+					.setPlaceholder('6')
+					.setValue(String(this.plugin.settings.transcriber.concurrencyLimit))
+					.onChange(async (value) => {
+						const parsed = Number.parseInt(value.trim(), 10);
+						const nextValue = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SETTINGS.transcriber.concurrencyLimit;
+						this.plugin.settings.transcriber.concurrencyLimit = nextValue;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'number';
+				text.inputEl.min = '1';
+			});
 
 		// Editor Settings
 		containerEl.createEl('h2', { text: '✏️ Editor Settings' });

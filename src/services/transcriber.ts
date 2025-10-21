@@ -98,8 +98,9 @@ export class TranscriberService {
 		const preprocessTime = (Date.now() - preprocessStartTime) / 1000;
 		console.log(`✅ Preprocessing completed, generated ${chunks.length} audio chunks, time: ${preprocessTime.toFixed(2)}s`);
 
-		// Create concurrency limiter with max 6 parallel requests
-		const concurrencyLimiter = new ConcurrencyLimiter(6);
+		const configuredLimit = Math.max(1, Math.floor(settings.concurrencyLimit ?? 6));
+		// Create concurrency limiter with configured parallel requests
+		const concurrencyLimiter = new ConcurrencyLimiter(configuredLimit);
 		let fullText = '';
 
 		// Handle OpenAI transcription

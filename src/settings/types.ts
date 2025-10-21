@@ -4,6 +4,7 @@ export interface TranscriberSettings {
 	model: string;
 	audioDir: string;
 	transcriptDir: string;
+	concurrencyLimit: number;
 }
 
 export interface SystemPromptTemplate {
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 		model: 'gpt-4o-transcribe',
 		audioDir: '',
 		transcriptDir: '',
+		concurrencyLimit: 6,
 	},
 	editor: {
 		enabled: true,
