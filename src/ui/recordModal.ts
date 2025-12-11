@@ -65,7 +65,7 @@ export default class RecordModal extends Modal {
 			try {
 				// Start recording
 				await this.recorder.start();
-				this.plugin.updateStatus('Recording...');
+				this.plugin.updateStatus('🎤 Recording...');
 				new Notice('Recording started');
 				// Manually update button states immediately
 				this.recordBtn.setAttr('disabled', 'true');
@@ -84,7 +84,7 @@ export default class RecordModal extends Modal {
 		this.pauseBtn.onclick = () => {
 			if (!this.isPaused) {
 				this.recorder.pause();
-				this.plugin.updateStatus('Recording Paused');
+				this.plugin.updateStatus('⏸️ Recording Paused');
 				this.pauseBtn.setText('Resume');
 				this.isPaused = true;
 				new Notice('Recording paused');
@@ -92,7 +92,7 @@ export default class RecordModal extends Modal {
 				this.clearWaveformCanvas();
 			} else {
 				this.recorder.resume();
-				this.plugin.updateStatus('Recording...');
+				this.plugin.updateStatus('🎤 Recording...');
 				this.pauseBtn.setText('Pause');
 				this.isPaused = false;
 				new Notice('Recording resumed');
@@ -114,7 +114,6 @@ export default class RecordModal extends Modal {
 
 				const audioFileName = audioPath.substring(audioPath.lastIndexOf('/') + 1);
 				const baseName = audioFileName.replace(/\.[^/.]+$/, '');
-				const transcriptDir = this.plugin.settings.transcriber.transcriptDir;
 
 				if (this.plugin.settings.editor.enabled) {
 					new SystemPromptTemplateSelectionModal(this.app, this.plugin, async (selectedTemplateName) => {
@@ -133,25 +132,9 @@ export default class RecordModal extends Modal {
 							return;
 						}
 
-						// Proceed with transcription and editing
 						try {
-							this.plugin.updateStatus('AI Transcribing...');
-							new Notice('Transcribing audio…');
-							this.close(); // Close modal once transcription starts
-							const transcript = await this.plugin.transcriber.transcribe(result.blob, this.plugin.settings.transcriber);
-
-							this.plugin.updateStatus('AI Editing...');
-							if (this.plugin.settings.editor.keepOriginal) {
-								const rawFileName = `${baseName}_raw_transcript.md`;
-								const rawPath = await this.fileService.saveTextWithName(transcript, transcriptDir, rawFileName);
-								new Notice(`Raw transcript saved to ${rawPath}`);
-							}
-							new Notice('Editing transcript with AI using template: ' + selectedTemplateName);
-							const edited = await this.plugin.editorService.edit(transcript, this.plugin.settings.editor, selectedTemplate.prompt);
-							const editedFileName = `${baseName}_edited_transcript.md`;
-							const editedPath = await this.fileService.saveTextWithName(edited, transcriptDir, editedFileName);
-							new Notice(`Edited transcript saved to ${editedPath}`);
-							await this.fileService.openFile(editedPath);
+							this.close();
+							await this.plugin.processTranscription(result.blob, baseName, selectedTemplate.prompt);
 						} catch (e) {
 							new Notice(`Error during transcription/editing: ${(e as Error).message}`);
 							console.error('Error during transcription/editing:', e);
@@ -160,24 +143,17 @@ export default class RecordModal extends Modal {
 						}
 					}).open();
 				} else {
-					// Editor is not enabled, just transcribe and save raw
 					try {
-						this.plugin.updateStatus('AI Transcribing...');
-						new Notice('Transcribing audio…');
-						const transcript = await this.plugin.transcriber.transcribe(result.blob, this.plugin.settings.transcriber);
-						const rawFileName = `${baseName}_raw_transcript.md`;
-						const transcriptPath = await this.fileService.saveTextWithName(transcript, transcriptDir, rawFileName);
-						new Notice(`Transcript saved to ${transcriptPath}`);
-						await this.fileService.openFile(transcriptPath);
+						await this.plugin.processTranscription(result.blob, baseName);
 					} catch (e) {
 						new Notice(`Error during transcription: ${(e as Error).message}`);
 						console.error('Error during transcription:', e);
 					} finally {
 						this.plugin.updateStatus('Transcriber Idle');
-						this.close(); // Ensure modal closes
+						this.close();
 					}
 				}
-			} catch (error: unknown) { // Outer catch for errors during recorder.stop() or fileService.saveRecording()
+			} catch (error: unknown) {
 				new Notice(`Error: ${(error as Error).message}`);
 				console.error(error);
 				this.plugin.updateStatus('Transcriber Idle');
@@ -192,7 +168,7 @@ export default class RecordModal extends Modal {
 			this.stopBtn.setAttr('disabled', 'true');
 			this.pauseBtn.setAttr('disabled', 'true');
 			this.recordBtn.setAttr('disabled', 'true');
-			this.plugin.updateStatus('Saving recording...');
+			this.plugin.updateStatus('💾 Saving recording...');
 			new Notice('Saving recording...');
 			try {
 				const result: RecordingResult = await this.recorder.stop();

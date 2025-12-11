@@ -1,10 +1,10 @@
 export interface TranscriberSettings {
-	provider: 'openai' | 'gemini';
 	apiKey: string;
 	model: string;
 	audioDir: string;
 	transcriptDir: string;
-	concurrencyLimit: number;
+	temperature: number;
+	thinkingLevel: 'low' | 'high';
 }
 
 export interface SystemPromptTemplate {
@@ -14,13 +14,13 @@ export interface SystemPromptTemplate {
 
 export interface EditorSettings {
 	enabled: boolean;
-	provider: 'openai' | 'gemini';
 	apiKey: string;
 	model: string;
 	systemPromptTemplates: SystemPromptTemplate[];
 	activeSystemPromptTemplateName: string;
 	userPrompt: string;
 	temperature: number;
+	thinkingLevel: 'low' | 'high';
 	keepOriginal: boolean;
 }
 
@@ -31,70 +31,67 @@ export interface PluginSettings {
 
 export const DEFAULT_SETTINGS: PluginSettings = {
 	transcriber: {
-		provider: 'openai',
 		apiKey: '',
-		model: 'gpt-4o-transcribe',
+		model: 'gemini-2.5-flash',
 		audioDir: '',
 		transcriptDir: '',
-		concurrencyLimit: 6,
+		temperature: 1.0,
+		thinkingLevel: 'low',
 	},
 	editor: {
 		enabled: true,
-		provider: 'gemini',
 		apiKey: '',
-		model: 'gemini-2.5-pro-preview-06-05',
+		model: 'gemini-2.5-pro',
 		systemPromptTemplates: [
 			{
 				name: 'Default',
-				prompt: `You are a professional meeting-minutes generation assistant. Upon receiving the user's raw transcript, output a structured Markdown document **strictly** according to the following requirements. **For all sections *except* \`## 📄 Transcript\`, your output must be in Chinese.** The language handling for the \`## 📄 Transcript\` section is detailed below.
+				prompt: `You are a professional meeting-minutes generation assistant. Upon receiving the user's raw transcript, output a structured Markdown document according to the following requirements.
 
-1. **Format**
-   - Divide into three sections with level-2 headings:
+## Language Rules
+- **Summary and Key Points**: Always output in **Chinese**, regardless of the transcript's language
+- **Transcript**: Preserve the **original language** of the speech (do not translate)
+
+## Format
+
+Divide into three sections with level-2 headings:
+
+### 1. Summary (中文)
+- No more than 300 Chinese characters
+- Capture the main purpose, key decisions, and outcomes
+
+### 2. Key Points (中文)
+- Up to 20 concise bullet points
+- Focus on actionable items, decisions, and important information
+
+### 3. Transcript (保持原文语言)
+- **Correct mistranscriptions**: Fix any clearly erroneous words or phrases based on context (output only the corrected version, do not show original errors)
+- **Clean up**: Remove all fillers ("um," "uh," "嗯," "那个"), stammers, repetitions, and meaningless padding
+- **Paragraph breaks**: Split by speaker change or natural topic shifts (not by rigid word/sentence counts)
+
+## Content Requirements
+- Do **not** add new information or commentary—only refine what's in the original
+- Preserve full semantic integrity; do **not** alter facts
+
+## Output Requirements
+- Start directly with \`## 📝 Summary\`
+- Output only the structured Markdown—no explanations, acknowledgments, or dialogue
+
+## Example Structure
 \`\`\`markdown
 ## 📝 Summary
-## ✨ Key Points
-## 📄 Transcript
-\`\`\`
-   - In **Summary**, use 200–300 words to distill the core conclusions.
-   - In **Key Points**, list up to 10 concise bullet points (Markdown list).
-   - In **Transcript**
-	   1. **Correction of Mistranscriptions**: Based on the overall context and linguistic coherence, identify and correct any mistranscribed nouns or other segments of text within the raw transcript that are clearly erroneous or contextually inappropriate. When a correction is made, the corrected text should be presented, immediately followed by the original mistranscribed text in parentheses. This applies to text in any language.
-	   2. After corrections, remove all filler ("um," "uh"), stammers, repetitions, and meaningless padding from the transcript.
-	   3. Break the corrected and cleaned transcript into paragraphs **at every speaker change** or **every 4–5 sentences** (ensure no paragraph is longer than ~200 words).
-	   4. Use a blank line to separate each paragraph.
-	   5. **Language Handling for Transcript Paragraphs:**
-          - If a paragraph contains any Chinese characters: Output **only** the corrected and cleaned Chinese text. **Do not** add translations, explanations, or any other language.
-		  - If the original language of the transcript segment is English: First output the corrected and cleaned English paragraph (including any parenthetical original text for corrections). Then, on a new line, provide its Chinese translation formatted as a blockquote (e.g., \`> [中文翻译]\`). The translation should reflect the *corrected* English text.
-          - For any language other than English or Chinese: Output the corrected text in the original language **without** translation.
-
-2. **Content Requirements**
-   - Do **not** add any new information or commentary—only refine and reorganize what's in the original. The goal of correction is to reflect the intended meaning more accurately.
-   - Preserve full semantic integrity; do **not** alter facts.
-   - Focus on extracting relevant information for each section accurately from the corrected and transcript.
-
-3. **Output Requirements**
-   - **Start** directly with \`## 📝 Summary\` and output **only** the structured Markdown—no leading prompts, explanations, acknowledgments, or dialogue.
-
-4. **Example Structure**
-\`\`\`markdown
-## 📝 Summary
-(200–300 words)
+（用中文总结核心结论，不超过300字）
 
 ## ✨ Key Points
-- Point 1
-- Point 2
+- 要点一（中文）
+- 要点二（中文）
 ...
 
 ---
 
 ## 📄 Transcript
-This is an example of an English paragraph from the transcript. It has been cleaned of fillers and includes a correction. For instance, we talked about the new project plan (original: projeckt plan).
-> 这是转录稿中英文段落的示例。它已经清除了填充词并包含一个修正。例如，我们讨论了新的项目计划（原文：projeckt plan）。
+第一段内容，按照说话人或话题自然分段。已经修正了错误转录，去除了口头禅和重复。
 
-这是一个中文段落的示例，它直接输出，不需要翻译。这里也可能有一个修正，比如：我们讨论了关于市场推广的新策略（原文：新侧列）。
-
-Here is another segment in English, perhaps with a mistranscribed noun like: We need to order more paper (original: taper) for the printer.
-> 这是另一段英文内容，可能有一个错误转录的名词，例如：我们需要为打印机订购更多的纸张（原文：taper）。
+第二段内容，保持原文语言输出。如果原文是英文，这里就是英文。
 
 ...
 \`\`\``
@@ -102,7 +99,8 @@ Here is another segment in English, perhaps with a mistranscribed noun like: We 
 		],
 		activeSystemPromptTemplateName: 'Default',
 		userPrompt: "Here's the transcript:\n\n",
-		temperature: 0.3,
+		temperature: 1.0,
+		thinkingLevel: 'high',
 		keepOriginal: true,
 	},
 };

@@ -1,7 +1,7 @@
 {
 	"name": "obsidian-ai-transcriber",
 	"version": "1.1.6",
-	"description": "This is a plugin for Obsidian (https://obsidian.md) that transcribes audio files using AI.",
+	"description": "Obsidian plugin that records and transcribes audio to Markdown notes using Google Gemini AI, with optional AI-based editing",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
@@ -22,7 +22,8 @@
 		"typescript": "4.7.4"
 	},
 	"dependencies": {
-		"@google/genai": "^0.12.0",
-		"openai": "^4.97.0"
+		"@breezystack/lamejs": "^1.2.7",
+		"@fix-webm-duration/fix": "^1.0.1",
+		"@google/genai": "^1.33.0"
 	}
 }

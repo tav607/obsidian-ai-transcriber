@@ -13,22 +13,21 @@ export default class SettingsTab extends PluginSettingTab {
 	private getActiveTemplate(): SystemPromptTemplate | undefined {
 		const activeName = this.plugin.settings.editor.activeSystemPromptTemplateName;
 		if (!this.plugin.settings.editor.systemPromptTemplates) {
-			this.plugin.settings.editor.systemPromptTemplates = []; // Initialize if undefined
+			this.plugin.settings.editor.systemPromptTemplates = [];
 		}
-		// Ensure there is always a default template if the list is empty or active one is not found
+		// Ensure there is always a default template using the one from DEFAULT_SETTINGS
 		if (!this.plugin.settings.editor.systemPromptTemplates.find(t => t.name === 'Default')) {
-			this.plugin.settings.editor.systemPromptTemplates.unshift({
-				name: 'Default',
-				prompt: "You are a professional meeting-minutes generation assistant. Upon receiving the user's raw transcript, output a structured Markdown document **strictly** according to the following requirements—and ensure that the language you use matches the language of the raw transcript.\n\n1. **Format**\n\n   - Divide into three sections with level-2 headings:\n```\n## 📝 Summary\n## ✨ Key Points\n## 📄 Transcript\n```\n   - In **Summary**, use 200–300 words to distill the core conclusions.\n   - In **Key Points**, list 5–10 concise bullet points (Markdown list).\n   - In **Transcript**\n\t   1. Remove all filler (\"um,\" \"uh\"), stammers, repetitions, and meaningless padding.\n\t   2. Break into paragraphs **at every speaker change** or **every 4–5 sentences** (no paragraph longer than ~200 words).\n\t   3. Use a blank line to separate each paragraph.\n\n2. **Content Requirements**\n\n   - Do **not** add any new information or commentary—only refine and reorganize what's in the original.\n   - Preserve full semantic integrity; do **not** alter facts.\n\n3. **Output Requirements**\n\n   - **Start** directly with `## 📝 Summary` and output **only** the structured Markdown—no leading prompts, explanations, acknowledgments, or dialogue.\n\n4. **Example Structure**\n```markdown\n## 📝 Summary\n(200–300 words)\n\n## ✨ Key Points\n- Point 1\n- Point 2\n…\n\n## 📄 Transcript\nParagraph 1\n\nParagraph 2\n\n…\n```"
-			});
+			const defaultTemplate = DEFAULT_SETTINGS.editor.systemPromptTemplates.find(t => t.name === 'Default');
+			if (defaultTemplate) {
+				this.plugin.settings.editor.systemPromptTemplates.unshift({ ...defaultTemplate });
+			}
 			if (this.plugin.settings.editor.systemPromptTemplates.length === 1) {
 				this.plugin.settings.editor.activeSystemPromptTemplateName = 'Default';
 			}
 		}
-		
+
 		let template = this.plugin.settings.editor.systemPromptTemplates.find(t => t.name === activeName);
 		if (!template && this.plugin.settings.editor.systemPromptTemplates.length > 0) {
-			// If active template not found, default to the first one (which should be 'Default')
 			this.plugin.settings.editor.activeSystemPromptTemplateName = this.plugin.settings.editor.systemPromptTemplates[0].name;
 			template = this.plugin.settings.editor.systemPromptTemplates[0];
 		}
@@ -55,34 +54,23 @@ export default class SettingsTab extends PluginSettingTab {
 		// Transcriber Settings
 		containerEl.createEl('h2', { text: '🎙️ Transcriber Settings' });
 		new Setting(containerEl)
-			.setName('API Provider')
-			.setDesc('Choose OpenAI or Gemini')
-			.addDropdown(drop => drop
-				.addOption('openai', 'OpenAI')
-				.addOption('gemini', 'Gemini')
-				.setValue(this.plugin.settings.transcriber.provider)
-				.onChange(async (value) => {
-					this.plugin.settings.transcriber.provider = value as 'openai' | 'gemini';
-					await this.plugin.saveSettings();
-					this.display(); // Refresh to show conditional fields if any
-				})
-			);
-		new Setting(containerEl)
 			.setName('API Key')
-			.setDesc('Transcriber API Key')
-			.addText(text => text
-				.setPlaceholder('Your API Key')
-				.setValue(this.plugin.settings.transcriber.apiKey)
-				.onChange(async (value) => {
-					this.plugin.settings.transcriber.apiKey = value;
-					await this.plugin.saveSettings();
-				})
-			);
+			.setDesc('Gemini API Key from Google AI Studio')
+			.addText(text => {
+				text
+					.setPlaceholder('Your API Key')
+					.setValue(this.plugin.settings.transcriber.apiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.transcriber.apiKey = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+			});
 		new Setting(containerEl)
 			.setName('Model Name')
-			.setDesc('Specify the model to use for transcription.')
+			.setDesc('Specify the Gemini model to use for transcription.')
 			.addText(text => text
-				.setPlaceholder('Example: gpt-4o-transcribe')
+				.setPlaceholder('Example: gemini-2.5-flash')
 				.setValue(this.plugin.settings.transcriber.model)
 				.onChange(async (value) => {
 					this.plugin.settings.transcriber.model = value;
@@ -112,21 +100,31 @@ export default class SettingsTab extends PluginSettingTab {
 				})
 			);
 		new Setting(containerEl)
-			.setName('Max Concurrent Requests')
-			.setDesc('Maximum number of audio chunks to transcribe in parallel (minimum 1).')
-			.addText(text => {
-				text
-					.setPlaceholder('6')
-					.setValue(String(this.plugin.settings.transcriber.concurrencyLimit))
-					.onChange(async (value) => {
-						const parsed = Number.parseInt(value.trim(), 10);
-						const nextValue = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SETTINGS.transcriber.concurrencyLimit;
-						this.plugin.settings.transcriber.concurrencyLimit = nextValue;
+			.setName('Temperature')
+			.setDesc('Temperature for transcription (0.0-2.0). Default: 1.0')
+			.addText(text => text
+				.setPlaceholder('1.0')
+				.setValue(this.plugin.settings.transcriber.temperature.toString())
+				.onChange(async (value) => {
+					const num = parseFloat(value);
+					if (!isNaN(num) && num >= 0 && num <= 2) {
+						this.plugin.settings.transcriber.temperature = num;
 						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = 'number';
-				text.inputEl.min = '1';
-			});
+					}
+				})
+			);
+		new Setting(containerEl)
+			.setName('Thinking Level')
+			.setDesc('Thinking level for transcription. Use "low" for faster transcription.')
+			.addDropdown(drop => drop
+				.addOption('low', 'Low (Faster)')
+				.addOption('high', 'High (More Accurate)')
+				.setValue(this.plugin.settings.transcriber.thinkingLevel)
+				.onChange(async (value) => {
+					this.plugin.settings.transcriber.thinkingLevel = value as 'low' | 'high';
+					await this.plugin.saveSettings();
+				})
+			);
 
 		// Editor Settings
 		containerEl.createEl('h2', { text: '✏️ Editor Settings' });
@@ -144,34 +142,23 @@ export default class SettingsTab extends PluginSettingTab {
 
 		if (this.plugin.settings.editor.enabled) {
 			new Setting(containerEl)
-				.setName('API Provider')
-				.setDesc('Choose OpenAI or Gemini')
-				.addDropdown(drop => drop
-					.addOption('openai', 'OpenAI')
-					.addOption('gemini', 'Gemini')
-					.setValue(this.plugin.settings.editor.provider)
-					.onChange(async (value) => {
-						this.plugin.settings.editor.provider = value as 'openai' | 'gemini';
-						await this.plugin.saveSettings();
-						this.display(); // Refresh
-					})
-				);
-			new Setting(containerEl)
 				.setName('API Key')
-				.setDesc('Editor API Key')
-				.addText(text => text
-					.setPlaceholder('Your API Key.')
-					.setValue(this.plugin.settings.editor.apiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.editor.apiKey = value;
-						await this.plugin.saveSettings();
-					})
-				);
+				.setDesc('Gemini API Key from Google AI Studio')
+				.addText(text => {
+					text
+						.setPlaceholder('Your API Key.')
+						.setValue(this.plugin.settings.editor.apiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.editor.apiKey = value;
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = 'password';
+				});
 			new Setting(containerEl)
 				.setName('Model Name')
-				.setDesc('Specify the model to use for editing.')
+				.setDesc('Specify the Gemini model to use for editing.')
 				.addText(text => text
-					.setPlaceholder('Example: gemini-2.5-flash-preview-04-17')
+					.setPlaceholder('Example: gemini-2.5-pro')
 					.setValue(this.plugin.settings.editor.model)
 					.onChange(async (value) => {
 						this.plugin.settings.editor.model = value;
@@ -326,16 +313,28 @@ export default class SettingsTab extends PluginSettingTab {
 				});
 			new Setting(containerEl)
 				.setName('Temperature')
-				.setDesc('Enter a value between 0.0 and 1.0. Suggested value: 0.3.')
+				.setDesc('Temperature for editing (0.0-2.0). Default: 1.0')
 				.addText(text => text
-					.setPlaceholder('0.0-1.0')
+					.setPlaceholder('1.0')
 					.setValue(this.plugin.settings.editor.temperature.toString())
 					.onChange(async (value) => {
 						const num = parseFloat(value);
-						if (!isNaN(num) && num >= 0 && num <= 1) {
+						if (!isNaN(num) && num >= 0 && num <= 2) {
 							this.plugin.settings.editor.temperature = num;
 							await this.plugin.saveSettings();
 						}
+					})
+				);
+			new Setting(containerEl)
+				.setName('Thinking Level')
+				.setDesc('Thinking level for editing. Use "high" for better quality.')
+				.addDropdown(drop => drop
+					.addOption('low', 'Low (Faster)')
+					.addOption('high', 'High (Better Quality)')
+					.setValue(this.plugin.settings.editor.thinkingLevel)
+					.onChange(async (value) => {
+						this.plugin.settings.editor.thinkingLevel = value as 'low' | 'high';
+						await this.plugin.saveSettings();
 					})
 				);
 			new Setting(containerEl)
@@ -409,12 +408,11 @@ class NewTemplateModal extends Modal {
 					const name = this.nameInput.getValue().trim();
 					const prompt = this.promptInput.getValue();
 					if (!name) {
-						// Add some validation feedback if name is empty
+						new Notice('Template name cannot be empty.');
 						return;
 					}
 					if (this.plugin.settings.editor.systemPromptTemplates.some(t => t.name === name)) {
-						// Add some validation feedback if name is taken
-						// Potentially use a Notice
+						new Notice(`Template name "${name}" already exists. Please choose a different name.`);
 						return;
 					}
 					this.onSubmit({ name, prompt });

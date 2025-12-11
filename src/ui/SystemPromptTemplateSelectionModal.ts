@@ -10,7 +10,8 @@ export class SystemPromptTemplateSelectionModal extends Modal {
         super(app);
         this.plugin = plugin;
         this.onSubmit = onSubmit;
-        this.selectedName = 'Default';
+        // Use the currently active template as default selection
+        this.selectedName = plugin.settings.editor.activeSystemPromptTemplateName || 'Default';
     }
 
     onOpen() {

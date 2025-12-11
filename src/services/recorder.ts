@@ -1,3 +1,5 @@
+import { fixWebmDuration } from "@fix-webm-duration/fix";
+
 export interface RecordingResult {
 	blob: Blob;
 	duration: number; // seconds
@@ -10,6 +12,7 @@ export class RecorderService {
 	private startTime = 0;
 	private pauseTime = 0;
 	private totalPausedTime = 0;
+	private finalElapsed: number | null = null;
 	private resolveStop: (result: RecordingResult) => void;
 	private rejectStop: (reason?: unknown) => void;
 	private stopPromise: Promise<RecordingResult>;
@@ -58,9 +61,18 @@ export class RecorderService {
 			this.resolveStop = resolve;
 			this.rejectStop = reject;
 			if (this.mediaRecorder) {
-				this.mediaRecorder.onstop = () => {
-					const blob = new Blob(this.recordedChunks, { type: 'audio/webm;codecs=opus' });
-					const duration = (Date.now() - this.startTime - this.totalPausedTime) / 1000;
+				this.mediaRecorder.onstop = async () => {
+					const rawBlob = new Blob(this.recordedChunks, { type: 'audio/webm;codecs=opus' });
+					const durationMs = Date.now() - this.startTime - this.totalPausedTime;
+					const duration = durationMs / 1000;
+					// Fix webm duration metadata for proper seeking support
+					let blob: Blob;
+					try {
+						blob = await fixWebmDuration(rawBlob, durationMs, { logger: false });
+					} catch (e) {
+						console.warn('Failed to fix webm duration, using raw blob:', e);
+						blob = rawBlob;
+					}
 					const size = blob.size;
 					resolve({ blob, duration, size });
 				};
@@ -85,7 +97,22 @@ export class RecorderService {
 	}
 
 	async stop(): Promise<RecordingResult> {
-		// Stop all tracks first to release microphone immediately
+		// Defensive check: if stop() is called before start(), return empty result
+		if (!this.stopPromise) {
+			return { blob: new Blob(), duration: 0, size: 0 };
+		}
+
+		// Store final elapsed time before stopping
+		this.finalElapsed = this.getElapsed();
+
+		// Stop the media recorder first to finalize the blob
+		if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+			this.mediaRecorder.stop();
+		}
+		// Wait for recording result (including webm duration fix)
+		const result = await this.stopPromise;
+
+		// Now clean up stream and audio context after blob is finalized
 		if (this.stream) {
 			this.stream.getTracks().forEach(track => track.stop());
 		}
@@ -103,19 +130,15 @@ export class RecorderService {
 			this.audioContext = null;
 		}
 
-		// Then stop the media recorder to finalize the blob
-		if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-			this.mediaRecorder.stop();
-		}
-		// Wait for recording result
-		const result = await this.stopPromise;
 		// Reset recorder and stream for next recording
 		this.mediaRecorder = null;
 		this.stream = null;
-		// Reset timing state
+		// Reset timing state and promise
 		this.startTime = 0;
 		this.pauseTime = 0;
 		this.totalPausedTime = 0;
+		this.finalElapsed = null;
+		this.stopPromise = null as unknown as Promise<RecordingResult>;
 		return result;
 	}
 
@@ -128,6 +151,10 @@ export class RecorderService {
 	}
 
 	public getElapsed(): number {
+		// If recording has been stopped, return the final elapsed time
+		if (this.finalElapsed !== null) {
+			return this.finalElapsed;
+		}
 		if (!this.startTime) return 0;
 		if (this.mediaRecorder?.state === 'paused') {
 			return (this.pauseTime - this.startTime - this.totalPausedTime) / 1000;

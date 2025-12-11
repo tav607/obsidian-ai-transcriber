@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 - `main.ts` is the Obsidian entry point and wires services, settings, and UI. The compiled bundle lives in `main.js`.
-- `src/services` hosts core logic for recording, file management, and AI transcription/editing; each service is scoped to a single responsibility.
+- `src/services` hosts core logic for recording, file management, and Gemini-based AI transcription/editing; each service is scoped to a single responsibility.
 - `src/settings` contains the plugin setting tab and typed configuration models.
 - `src/ui` provides modal dialogs for recording and template selection. Shared styling sits in `styles.css`.
 - Build tooling (`esbuild.config.mjs`, `tsconfig.json`, `version-bump.mjs`) and metadata (`manifest.json`, `versions.json`) stay at the repo root.
@@ -21,7 +21,7 @@
 
 ## Testing Guidelines
 - There is no automated test suite; rely on manual validation inside an Obsidian sandbox vault.
-- After `npm run dev`, load the plugin, exercise recording, external file transcription, and AI editing with both OpenAI and Gemini providers.
+- After `npm run dev`, load the plugin, exercise recording, external file transcription, and AI editing with the Gemini provider.
 - Document observed behaviours or regressions in your PR description; attach sample transcripts when relevant.
 
 ## Commit & Pull Request Guidelines

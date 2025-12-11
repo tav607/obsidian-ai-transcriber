@@ -85,11 +85,11 @@ export default class ObsidianAITranscriber extends Plugin {
 									return;
 								}
 
-								this.updateStatus('AI Editing...');
 								new Notice('Editing transcript with AI using template: ' + selectedTemplateName);
+								const statusCallback = (status: string) => this.updateStatus(status);
 
 								try {
-									const editedText = await this.editorService.edit(originalText, this.settings.editor, selectedTemplate.prompt);
+									const editedText = await this.editorService.edit(originalText, this.settings.editor, selectedTemplate.prompt, statusCallback);
 									const dir = file.parent ? file.parent.path : this.settings.transcriber.transcriptDir;
 									const baseName = file.basename.replace(/_raw_transcript$/, '').replace(/_edited_transcript$/, '');
 									
@@ -125,41 +125,17 @@ export default class ObsidianAITranscriber extends Plugin {
 							.setIcon('microphone')
 							.onClick(async () => {
 								const processAudioFile = async (systemPromptOverride?: string) => {
-									this.updateStatus('AI Transcribing...');
-									new Notice('Transcribing audio…');
 									try {
 										const arrayBuffer = await this.app.vault.readBinary(file);
-										let mime = '';
-										if (file.extension === 'm4a') mime = 'audio/mp4';
-										else if (file.extension === 'webm') mime = 'audio/webm';
-										else if (file.extension === 'mp3') mime = 'audio/mpeg';
-										else if (file.extension === 'wav') mime = 'audio/wav';
-										const blob = new Blob([arrayBuffer], { type: mime });
-										const transcript = await this.transcriber.transcribe(blob, this.settings.transcriber);
-										const dir = this.settings.transcriber.transcriptDir;
-										const audioFileName = file.name;
-										const baseName = audioFileName.replace(/\.[^/.]+$/, '');
-
-										if (this.settings.editor.enabled && systemPromptOverride !== undefined) {
-											this.updateStatus('AI Editing...');
-											if (this.settings.editor.keepOriginal) {
-												const rawFileName = `${baseName}_raw_transcript.md`;
-												const rawPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
-												new Notice(`Raw transcript saved to ${rawPath}`);
-											}
-											new Notice('Editing transcript with AI using the selected template.'); // User already saw template name
-											const edited = await this.editorService.edit(transcript, this.settings.editor, systemPromptOverride);
-											const editedFileName = `${baseName}_edited_transcript.md`;
-											const editedPath = await this.fileService.saveTextWithName(edited, dir, editedFileName);
-											new Notice(`Edited transcript saved to ${editedPath}`);
-											await this.fileService.openFile(editedPath);
-										} else {
-											// Editor not enabled or no systemPromptOverride (should not happen if logic is correct)
-											const rawFileName = `${baseName}_raw_transcript.md`;
-											const transcriptPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
-											new Notice(`Transcript saved to ${transcriptPath}`);
-											await this.fileService.openFile(transcriptPath);
-										}
+										const mimeTypes: Record<string, string> = {
+											'm4a': 'audio/mp4',
+											'webm': 'audio/webm',
+											'mp3': 'audio/mpeg',
+											'wav': 'audio/wav'
+										};
+										const blob = new Blob([arrayBuffer], { type: mimeTypes[file.extension] || '' });
+										const baseName = file.name.replace(/\.[^/.]+$/, '');
+										await this.processTranscription(blob, baseName, systemPromptOverride);
 									} catch (error: unknown) {
 										new Notice(`Error: ${(error as Error).message}`);
 										console.error(error);
@@ -172,20 +148,19 @@ export default class ObsidianAITranscriber extends Plugin {
 									new SystemPromptTemplateSelectionModal(this.app, this, async (selectedTemplateName) => {
 										if (!selectedTemplateName) {
 											new Notice('Template selection cancelled. Transcription aborted.');
-											this.updateStatus('Transcriber Idle'); // Reset status
+											this.updateStatus('Transcriber Idle');
 											return;
 										}
 										const selectedTemplate = this.settings.editor.systemPromptTemplates.find(t => t.name === selectedTemplateName);
 										if (!selectedTemplate) {
 											new Notice('Selected template not found. Transcription aborted.');
-											this.updateStatus('Transcriber Idle'); // Reset status
+											this.updateStatus('Transcriber Idle');
 											return;
 										}
 										await processAudioFile(selectedTemplate.prompt);
 									}).open();
 								} else {
-									// Editor not enabled, proceed directly with transcription and saving raw.
-									await processAudioFile(); 
+									await processAudioFile();
 								}
 							});
 					});
@@ -202,6 +177,43 @@ export default class ObsidianAITranscriber extends Plugin {
 	}
 
 	/**
+	 * Shared workflow for transcribing audio and optionally editing with AI.
+	 * @param blob Audio blob to transcribe
+	 * @param baseName Base name for output files (without extension)
+	 * @param systemPromptOverride System prompt to use for editing (undefined = skip editing)
+	 */
+	public async processTranscription(
+		blob: Blob,
+		baseName: string,
+		systemPromptOverride?: string
+	): Promise<void> {
+		const dir = this.settings.transcriber.transcriptDir;
+		const statusCallback = (status: string) => this.updateStatus(status);
+
+		new Notice('Transcribing audio…');
+		const transcript = await this.transcriber.transcribe(blob, this.settings.transcriber, statusCallback);
+
+		if (this.settings.editor.enabled && systemPromptOverride !== undefined) {
+			if (this.settings.editor.keepOriginal) {
+				const rawFileName = `${baseName}_raw_transcript.md`;
+				const rawPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
+				new Notice(`Raw transcript saved to ${rawPath}`);
+			}
+			new Notice('Editing transcript with AI...');
+			const edited = await this.editorService.edit(transcript, this.settings.editor, systemPromptOverride, statusCallback);
+			const editedFileName = `${baseName}_edited_transcript.md`;
+			const editedPath = await this.fileService.saveTextWithName(edited, dir, editedFileName);
+			new Notice(`Edited transcript saved to ${editedPath}`);
+			await this.fileService.openFile(editedPath);
+		} else {
+			const rawFileName = `${baseName}_raw_transcript.md`;
+			const transcriptPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
+			new Notice(`Transcript saved to ${transcriptPath}`);
+			await this.fileService.openFile(transcriptPath);
+		}
+	}
+
+	/**
 	 * Load plugin settings from disk.
 	 */
 	public async loadSettings(): Promise<void> {
@@ -209,12 +221,6 @@ export default class ObsidianAITranscriber extends Plugin {
 		// Ensure nested defaults for newly added fields
 		if (!this.settings.transcriber) {
 			this.settings.transcriber = { ...DEFAULT_SETTINGS.transcriber };
-		}
-		if (typeof this.settings.transcriber.concurrencyLimit !== 'number' || Number.isNaN(this.settings.transcriber.concurrencyLimit)) {
-			this.settings.transcriber.concurrencyLimit = DEFAULT_SETTINGS.transcriber.concurrencyLimit;
-		}
-		if (this.settings.transcriber.concurrencyLimit < 1) {
-			this.settings.transcriber.concurrencyLimit = 1;
 		}
 	}
 

@@ -2,9 +2,9 @@
 	"id": "obsidian-ai-transcriber",
 	"name": "Obsidian AI Transcriber",
 	"minAppVersion": "1.6.0",
-	"description": "Transcribe audio recordings to Markdown notes",
-	"author": "Tav607",
-	"authorUrl": "https://github.com/Tav607",
+	"description": "Record and transcribe audio to Markdown notes using Google Gemini AI, with optional AI-based editing",
+	"author": "tav607",
+	"authorUrl": "https://github.com/tav607",
 	"fundingUrl": "",
 	"isDesktopOnly": false,
 	"version": "1.1.6"
