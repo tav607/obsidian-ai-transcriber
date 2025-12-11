@@ -2,7 +2,7 @@ import { GoogleGenAI, createPartFromUri, type ThinkingConfig } from "@google/gen
 import { Mp3Encoder } from "@breezystack/lamejs";
 
 export class TranscriberService {
-	private readonly MAX_RETRIES = 3;
+	private readonly MAX_ATTEMPTS = 3;
 	private readonly RETRY_DELAY_MS = 1000;
 
 	/**
@@ -10,19 +10,19 @@ export class TranscriberService {
 	 */
 	private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
 		let lastError: Error | null = null;
-		for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
+		for (let attempt = 1; attempt <= this.MAX_ATTEMPTS; attempt++) {
 			try {
 				return await fn();
 			} catch (error) {
 				lastError = error as Error;
-				if (attempt < this.MAX_RETRIES) {
-					const delay = this.RETRY_DELAY_MS * Math.pow(2, attempt);
-					console.warn(`⚠️ Transcription failed (attempt ${attempt + 1}/${this.MAX_RETRIES + 1}): ${lastError.message}. Retrying in ${delay}ms...`);
+				if (attempt < this.MAX_ATTEMPTS) {
+					const delay = this.RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+					console.warn(`⚠️ Transcription failed (attempt ${attempt}/${this.MAX_ATTEMPTS}): ${lastError.message}. Retrying in ${delay}ms...`);
 					await new Promise(resolve => setTimeout(resolve, delay));
 				}
 			}
 		}
-		throw new Error(`Transcription failed after ${this.MAX_RETRIES + 1} attempts: ${lastError?.message}`);
+		throw new Error(`Transcription failed after ${this.MAX_ATTEMPTS} attempts: ${lastError?.message}`);
 	}
 
 	/**
@@ -77,12 +77,14 @@ export class TranscriberService {
 		// Use @google/genai SDK
 		const genai = new GoogleGenAI({ apiKey: settings.apiKey });
 
-		// Upload audio to File API
+		// Upload audio to File API with retry
 		console.log('📤 Uploading audio to Gemini File API...');
 		onStatus?.('📤 Uploading audio...');
 		const uploadStartTime = Date.now();
 		const file = new File([audioBlob], `audio_${Date.now()}.mp3`, { type: 'audio/mpeg' });
-		const uploadedFile = await genai.files.upload({ file, config: { mimeType: 'audio/mpeg' } });
+		const uploadedFile = await this.withRetry(async () => {
+			return await genai.files.upload({ file, config: { mimeType: 'audio/mpeg' } });
+		});
 		const uploadTime = (Date.now() - uploadStartTime) / 1000;
 		console.log(`✅ Audio uploaded: ${uploadedFile.name}, time: ${uploadTime.toFixed(2)}s`);
 

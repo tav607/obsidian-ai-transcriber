@@ -2,6 +2,29 @@ import { GoogleGenAI, type ThinkingConfig } from "@google/genai";
 import { EditorSettings } from '../settings/types';
 
 export class EditorService {
+	private readonly MAX_ATTEMPTS = 3;
+	private readonly RETRY_DELAY_MS = 1000;
+
+	/**
+	 * Retry a function with exponential backoff
+	 */
+	private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
+		let lastError: Error | null = null;
+		for (let attempt = 1; attempt <= this.MAX_ATTEMPTS; attempt++) {
+			try {
+				return await fn();
+			} catch (error) {
+				lastError = error as Error;
+				if (attempt < this.MAX_ATTEMPTS) {
+					const delay = this.RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+					console.warn(`⚠️ Editor request failed (attempt ${attempt}/${this.MAX_ATTEMPTS}): ${lastError.message}. Retrying in ${delay}ms...`);
+					await new Promise(resolve => setTimeout(resolve, delay));
+				}
+			}
+		}
+		throw new Error(`Editor request failed after ${this.MAX_ATTEMPTS} attempts: ${lastError?.message}`);
+	}
+
 	/**
 	 * Edit and format transcription text using Gemini API.
 	 * @param text The transcript text to edit
@@ -47,7 +70,7 @@ export class EditorService {
 		const genAI = new GoogleGenAI({ apiKey: settings.apiKey });
 		onStatus?.('✨ Generating edited text...');
 
-		try {
+		return await this.withRetry(async () => {
 			const response = await genAI.models.generateContent({
 				model: settings.model,
 				contents: [{ role: "user", parts: [{ text: userContent }] }],
@@ -78,9 +101,6 @@ export class EditorService {
 				console.error('Full Gemini API response (when text is undefined):', JSON.stringify(response, null, 2));
 				throw new Error(detailedError);
 			}
-		} catch (error: unknown) {
-			console.error('Error during Gemini API call or processing:', error);
-			throw new Error(`Gemini API request failed: ${(error as Error).message || 'Unknown error'}`);
-		}
+		});
 	}
 } 
