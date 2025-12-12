@@ -13,9 +13,9 @@ export class RecorderService {
 	private pauseTime = 0;
 	private totalPausedTime = 0;
 	private finalElapsed: number | null = null;
-	private resolveStop: (result: RecordingResult) => void;
-	private rejectStop: (reason?: unknown) => void;
-	private stopPromise: Promise<RecordingResult>;
+	private resolveStop: ((result: RecordingResult) => void) | null = null;
+	private rejectStop: ((reason?: unknown) => void) | null = null;
+	private stopPromise: Promise<RecordingResult> | null = null;
 	private stream: MediaStream | null = null;
 	private audioContext: AudioContext | null = null;
 	private analyserNode: AnalyserNode | null = null;
@@ -23,9 +23,28 @@ export class RecorderService {
 
 	constructor() {}
 
+	// Detected MIME type for recording (set during init)
+	private detectedMimeType: string = 'audio/webm;codecs=opus';
+
 	public async init() {
 		this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-		this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: 'audio/webm;codecs=opus' });
+
+		// Detect supported MIME type for cross-platform compatibility
+		const mimeTypes = [
+			'audio/webm;codecs=opus',
+			'audio/webm',
+			'audio/mp4',
+			'audio/ogg;codecs=opus',
+			'audio/ogg',
+		];
+		const supported = mimeTypes.find(t => MediaRecorder.isTypeSupported(t));
+		if (!supported) {
+			throw new Error('No supported audio recording format found on this device. Recording may not be available.');
+		}
+		this.detectedMimeType = supported;
+		console.log(`🎤 Using audio format: ${supported}`);
+
+		this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: supported });
 		this.mediaRecorder.ondataavailable = (e: BlobEvent) => {
 			if (e.data.size > 0) {
 				this.recordedChunks.push(e.data);
@@ -62,15 +81,19 @@ export class RecorderService {
 			this.rejectStop = reject;
 			if (this.mediaRecorder) {
 				this.mediaRecorder.onstop = async () => {
-					const rawBlob = new Blob(this.recordedChunks, { type: 'audio/webm;codecs=opus' });
+					const rawBlob = new Blob(this.recordedChunks, { type: this.detectedMimeType });
 					const durationMs = Date.now() - this.startTime - this.totalPausedTime;
 					const duration = durationMs / 1000;
-					// Fix webm duration metadata for proper seeking support
+					// Fix webm duration metadata for proper seeking support (only for webm format)
 					let blob: Blob;
-					try {
-						blob = await fixWebmDuration(rawBlob, durationMs, { logger: false });
-					} catch (e) {
-						console.warn('Failed to fix webm duration, using raw blob:', e);
+					if (this.detectedMimeType.startsWith('audio/webm')) {
+						try {
+							blob = await fixWebmDuration(rawBlob, durationMs, { logger: false });
+						} catch (e) {
+							console.warn('Failed to fix webm duration, using raw blob:', e);
+							blob = rawBlob;
+						}
+					} else {
 						blob = rawBlob;
 					}
 					const size = blob.size;
@@ -138,7 +161,7 @@ export class RecorderService {
 		this.pauseTime = 0;
 		this.totalPausedTime = 0;
 		this.finalElapsed = null;
-		this.stopPromise = null as unknown as Promise<RecordingResult>;
+		this.stopPromise = null;
 		return result;
 	}
 

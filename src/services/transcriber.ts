@@ -1,29 +1,8 @@
 import { GoogleGenAI, createPartFromUri, type ThinkingConfig } from "@google/genai";
 import { Mp3Encoder } from "@breezystack/lamejs";
+import { withRetry } from "../utils/retry";
 
 export class TranscriberService {
-	private readonly MAX_ATTEMPTS = 3;
-	private readonly RETRY_DELAY_MS = 1000;
-
-	/**
-	 * Retry a function with exponential backoff
-	 */
-	private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
-		let lastError: Error | null = null;
-		for (let attempt = 1; attempt <= this.MAX_ATTEMPTS; attempt++) {
-			try {
-				return await fn();
-			} catch (error) {
-				lastError = error as Error;
-				if (attempt < this.MAX_ATTEMPTS) {
-					const delay = this.RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-					console.warn(`⚠️ Transcription failed (attempt ${attempt}/${this.MAX_ATTEMPTS}): ${lastError.message}. Retrying in ${delay}ms...`);
-					await new Promise(resolve => setTimeout(resolve, delay));
-				}
-			}
-		}
-		throw new Error(`Transcription failed after ${this.MAX_ATTEMPTS} attempts: ${lastError?.message}`);
-	}
 
 	/**
 	 * Clean up repetitive characters in transcription result
@@ -82,53 +61,73 @@ export class TranscriberService {
 		onStatus?.('📤 Uploading audio...');
 		const uploadStartTime = Date.now();
 		const file = new File([audioBlob], `audio_${Date.now()}.mp3`, { type: 'audio/mpeg' });
-		const uploadedFile = await this.withRetry(async () => {
-			return await genai.files.upload({ file, config: { mimeType: 'audio/mpeg' } });
-		});
+		const uploadedFile = await withRetry(
+			async () => genai.files.upload({ file, config: { mimeType: 'audio/mpeg' } }),
+			3, 1000, 'File upload'
+		);
 		const uploadTime = (Date.now() - uploadStartTime) / 1000;
 		console.log(`✅ Audio uploaded: ${uploadedFile.name}, time: ${uploadTime.toFixed(2)}s`);
 
-		// Transcribe with retry support
+		// Transcribe with retry support, ensuring file cleanup in finally block
 		onStatus?.('📝 Transcribing...');
-		let fullText = await this.withRetry(async () => {
-			console.log(`⏳ Processing transcription...`);
-			const processStartTime = Date.now();
-
-			const response = await genai.models.generateContent({
-				model: settings.model,
-				contents: [
-					{
-						parts: [
-							{ text: "Transcribe this audio. If the language is Chinese, please use Simplified Chinese characters. Provide only the direct transcription text without any introductory phrases." },
-							createPartFromUri(uploadedFile.uri!, uploadedFile.mimeType!),
-						],
-					}
-				],
-				config: {
-					temperature: settings.temperature,
-					thinkingConfig: {
-						thinkingLevel: settings.thinkingLevel,
-					} as unknown as ThinkingConfig,
-				},
-			});
-
-			const processTime = (Date.now() - processStartTime) / 1000;
-			console.log(`✅ Transcription completed, time: ${processTime.toFixed(2)}s, text length: ${(response.text || '').length}`);
-
-			return response.text || '';
-		});
-
-		const transcriptionTime = (Date.now() - transcriptionStartTime) / 1000;
-		console.log(`✅ Gemini transcription completed, time: ${transcriptionTime.toFixed(2)}s`);
-
-		// Clean up uploaded file
-		console.log('🧹 Cleaning up uploaded file...');
-		onStatus?.('🧹 Cleaning up...');
+		let fullText: string;
 		try {
-			await genai.files.delete({ name: uploadedFile.name! });
-			console.log('✅ Uploaded file cleaned up');
-		} catch {
-			// Ignore cleanup errors
+			fullText = await withRetry(
+				async () => {
+					console.log(`⏳ Processing transcription...`);
+					const processStartTime = Date.now();
+
+					const response = await genai.models.generateContent({
+						model: settings.model,
+						contents: [
+							{
+								parts: [
+									{ text: "Transcribe this audio. If the language is Chinese, please use Simplified Chinese characters. Provide only the direct transcription text without any introductory phrases." },
+									createPartFromUri(uploadedFile.uri!, uploadedFile.mimeType!),
+								],
+							}
+						],
+						config: {
+							temperature: settings.temperature,
+							thinkingConfig: {
+								thinkingLevel: settings.thinkingLevel,
+							} as unknown as ThinkingConfig,
+						},
+					});
+
+					const processTime = (Date.now() - processStartTime) / 1000;
+					const text = response.text;
+
+					// Validate response - check for empty result or blocked content
+					if (!text || text.trim() === '') {
+						let errorMsg = 'Transcription returned empty result.';
+						if (response.promptFeedback?.blockReason) {
+							errorMsg += ` Block reason: ${response.promptFeedback.blockReason}`;
+							if (response.promptFeedback.blockReasonMessage) {
+								errorMsg += ` (${response.promptFeedback.blockReasonMessage})`;
+							}
+						}
+						throw new Error(errorMsg);
+					}
+
+					console.log(`✅ Transcription completed, time: ${processTime.toFixed(2)}s, text length: ${text.length}`);
+					return text;
+				},
+				3, 1000, 'Transcription'
+			);
+
+			const transcriptionTime = (Date.now() - transcriptionStartTime) / 1000;
+			console.log(`✅ Gemini transcription completed, time: ${transcriptionTime.toFixed(2)}s`);
+		} finally {
+			// Always clean up uploaded file, even if transcription fails
+			console.log('🧹 Cleaning up uploaded file...');
+			onStatus?.('🧹 Cleaning up...');
+			try {
+				await genai.files.delete({ name: uploadedFile.name! });
+				console.log('✅ Uploaded file cleaned up');
+			} catch {
+				console.warn('⚠️ Failed to clean up uploaded file, it may remain on Gemini servers');
+			}
 		}
 
 		// Clean up repetitive characters

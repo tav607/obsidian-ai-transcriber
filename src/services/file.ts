@@ -48,18 +48,41 @@ export class FileService {
 	}
 
 	/**
+	 * Generate a unique file path by appending _2, _3, etc. if the file already exists.
+	 */
+	private getUniqueFilePath(folder: string, fileName: string): string {
+		const basePath = normalizePath(folder ? `${folder}/${fileName}` : fileName);
+
+		// Check if file exists
+		if (!this.app.vault.getAbstractFileByPath(basePath)) {
+			return basePath;
+		}
+
+		// Split filename into name and extension
+		const lastDotIndex = fileName.lastIndexOf('.');
+		const nameWithoutExt = lastDotIndex > 0 ? fileName.substring(0, lastDotIndex) : fileName;
+		const ext = lastDotIndex > 0 ? fileName.substring(lastDotIndex) : '';
+
+		// Find unique name with suffix _2, _3, etc.
+		let counter = 2;
+		let newPath: string;
+		do {
+			const newFileName = `${nameWithoutExt}_${counter}${ext}`;
+			newPath = normalizePath(folder ? `${folder}/${newFileName}` : newFileName);
+			counter++;
+		} while (this.app.vault.getAbstractFileByPath(newPath));
+
+		return newPath;
+	}
+
+	/**
 	 * Save a text file using a custom filename (including extension).
-	 * If the file already exists, it will be overwritten.
+	 * If the file already exists, a suffix (_2, _3, etc.) will be added to avoid overwriting.
 	 */
 	async saveTextWithName(text: string, dir: string, fileName: string): Promise<string> {
 		const folder = await this.ensureFolder(dir);
-		const path = normalizePath(folder ? `${folder}/${fileName}` : fileName);
-		const existingFile = this.app.vault.getAbstractFileByPath(path);
-		if (existingFile instanceof TFile) {
-			await this.app.vault.modify(existingFile, text);
-		} else {
-			await this.app.vault.create(path, text);
-		}
+		const path = this.getUniqueFilePath(folder, fileName);
+		await this.app.vault.create(path, text);
 		return path;
 	}
 

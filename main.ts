@@ -92,10 +92,10 @@ export default class ObsidianAITranscriber extends Plugin {
 									const editedText = await this.editorService.edit(originalText, this.settings.editor, selectedTemplate.prompt, statusCallback);
 									const dir = file.parent ? file.parent.path : this.settings.transcriber.transcriptDir;
 									const baseName = file.basename.replace(/_raw_transcript$/, '').replace(/_edited_transcript$/, '');
-									
+
 									const editedFileName = `${baseName}_edited_transcript.md`;
 									const editedPath = await this.fileService.saveTextWithName(editedText, dir, editedFileName);
-									
+
 									new Notice(`Edited transcript saved to ${editedPath}`);
 									await this.fileService.openFile(editedPath);
 								} catch (error: unknown) {
@@ -171,9 +171,17 @@ export default class ObsidianAITranscriber extends Plugin {
 
 	/**
 	 * Cleanup when the plugin is unloaded.
+	 * Ensures recording is stopped and resources are released.
 	 */
-	public onunload(): void {
-		// Optional cleanup code
+	public async onunload(): Promise<void> {
+		// Stop any active recording to release microphone and AudioContext
+		if (this.recorder && (this.recorder.isRecording() || this.recorder.isPaused())) {
+			try {
+				await this.recorder.stop();
+			} catch {
+				// Ignore errors during cleanup
+			}
+		}
 	}
 
 	/**
@@ -214,13 +222,17 @@ export default class ObsidianAITranscriber extends Plugin {
 	}
 
 	/**
-	 * Load plugin settings from disk.
+	 * Load plugin settings from disk with deep merge to handle nested defaults.
 	 */
 	public async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-		// Ensure nested defaults for newly added fields
-		if (!this.settings.transcriber) {
-			this.settings.transcriber = { ...DEFAULT_SETTINGS.transcriber };
+		const loaded = await this.loadData();
+		this.settings = {
+			transcriber: { ...DEFAULT_SETTINGS.transcriber, ...loaded?.transcriber },
+			editor: { ...DEFAULT_SETTINGS.editor, ...loaded?.editor },
+		};
+		// Ensure systemPromptTemplates array exists and has at least one template
+		if (!this.settings.editor.systemPromptTemplates?.length) {
+			this.settings.editor.systemPromptTemplates = DEFAULT_SETTINGS.editor.systemPromptTemplates;
 		}
 	}
 
