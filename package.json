@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-ai-transcriber",
-	"version": "1.2.1",
+	"version": "1.2.2",
 	"description": "Obsidian plugin that records and transcribes audio to Markdown notes using Google Gemini AI, with optional AI-based editing",
 	"main": "main.js",
 	"scripts": {
