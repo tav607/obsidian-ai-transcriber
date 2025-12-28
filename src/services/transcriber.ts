@@ -82,7 +82,7 @@ export class TranscriberService {
 						contents: [
 							{
 								parts: [
-									{ text: "Transcribe this audio. If the language is Chinese, please use Simplified Chinese characters. Provide only the direct transcription text without any introductory phrases." },
+									{ text: "Transcribe this audio verbatim. If the language is Chinese, please use Simplified Chinese characters. Provide only the direct transcription text without any introductory phrases. IMPORTANT: Transcribe exactly what is spoken. Do NOT correct or change product names, version numbers, or technical terms — even if they seem incorrect or unfamiliar." },
 									createPartFromUri(uploadedFile.uri!, uploadedFile.mimeType!),
 								],
 							}

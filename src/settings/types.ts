@@ -64,7 +64,7 @@ Divide into three sections with level-2 headings:
 - Focus on actionable items, decisions, and important information
 
 ### 3. Transcript (保持原文语言)
-- **Correct mistranscriptions**: Fix any clearly erroneous words or phrases based on context (output only the corrected version, do not show original errors)
+- **Correct mistranscriptions**: Fix obvious speech-to-text errors (homophones, garbled words) based on context (output only the corrected version, do not show original errors)
 - **Clean up**: Remove all fillers ("um," "uh," "嗯," "那个"), stammers, repetitions, and meaningless padding
 - **Paragraph breaks**: Split by speaker change or natural topic shifts (not by rigid word/sentence counts)
 
